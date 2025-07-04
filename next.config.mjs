@@ -13,7 +13,7 @@ const nextConfig = {
     return config;
   },
   experimental: {
-    asyncWebAssembly: true,
+    // asyncWebAssembly: true, // Removed as it's not recognized in Next.js 15
   },
 }
 
