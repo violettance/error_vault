@@ -7,4 +7,9 @@
 # Bun lock file
 bun.lock
 # Node modules
-node_modules/ 
+node_modules/
+# Next.js build output
+.next/
+# Build output
+dist/
+build/ 
