@@ -30,6 +30,35 @@ export async function testSupabaseConnection() {
   }
 }
 
+// User ID'nin geçerli olup olmadığını kontrol etmek için fonksiyon
+export async function validateUserId(userId: string) {
+  try {
+    if (!userId || userId.trim() === '') {
+      return { success: false, error: 'User ID boş olamaz' }
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("user_id, is_active")
+      .eq("user_id", userId.trim())
+      .eq("is_active", true)
+      .single()
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return { success: false, error: 'Geçersiz User ID' }
+      }
+      console.error("User ID doğrulama hatası:", error)
+      return { success: false, error: 'User ID doğrulanamadı' }
+    }
+
+    return { success: true, data }
+  } catch (err) {
+    console.error("User ID doğrulama exception:", err)
+    return { success: false, error: 'User ID doğrulanamadı' }
+  }
+}
+
 // Types for better type safety
 export type ExamData = Database['public']['Tables']['exams']['Insert']
 export type SubjectData = Database['public']['Tables']['subjects']['Insert']
@@ -97,7 +126,7 @@ export async function saveSubject(subjectData: SubjectData) {
 }
 
 // Image upload fonksiyonu
-export async function uploadImage(file: File, examId: string, imageType: string = 'general') {
+export async function uploadImage(file: File, examId: string, imageType: string = 'general', userId?: string) {
   try {
     const fileExt = file.name.split('.').pop()
     const fileName = `${examId}/${imageType}/${Date.now()}.${fileExt}`
@@ -123,7 +152,8 @@ export async function uploadImage(file: File, examId: string, imageType: string 
       image_url: urlData.publicUrl,
       image_type: imageType,
       file_name: file.name,
-      file_size: file.size
+      file_size: file.size,
+      user_id: userId || 'demo_user'
     }).select()
 
     if (error) {

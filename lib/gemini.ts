@@ -57,14 +57,15 @@ export async function analyzeQuestionImage(file: File): Promise<QuestionAnalysis
 
 // Batch analiz
 export async function batchAnalyzeImages(
-  files: File[],
+  files: Array<{file: File, type: string}>,
   examId: string,
   onProgress?: (current: number, total: number) => void
 ): Promise<QuestionAnalysis[]> {
   const formData = new FormData();
   formData.append('exam_id', examId);
-  files.forEach(file => {
+  files.forEach(({file, type}) => {
     formData.append('files', file);
+    formData.append('file_types', type);
   });
   const response = await fetch('/api/analyze-image', {
     method: 'POST',
@@ -89,7 +90,9 @@ export async function batchAnalyzeImages(
 export async function generatePerformanceReport(
   examName: string,
   chartData: ChartData,
-  totalQuestions: number
+  totalQuestions: number,
+  examStats?: Array<{subject: string, correct: number, wrong: number, blank: number, net: number}>,
+  detailedAnalyses?: Array<{subject: string, topic: string, sub_achievement: string, question_status: string, difficulty_level: string, error_type: string, solution_strategy: string, learning_level: string, selectivity: string}>
 ): Promise<string> {
   const response = await fetch('/api/generate-report', {
     method: 'POST',
@@ -99,7 +102,9 @@ export async function generatePerformanceReport(
     body: JSON.stringify({
       examName,
       chartData,
-      totalQuestions
+      totalQuestions,
+      examStats,
+      detailedAnalyses
     }),
   });
   

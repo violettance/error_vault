@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { getQuestionAnalyses, getQuestionAnalysesByUser } from "@/lib/supabase";
+import { getQuestionAnalyses, getQuestionAnalysesByUser, validateUserId, supabase } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,40 +39,13 @@ export default function AnalysisClient() {
   const [error, setError] = useState<string | null>(null);
   const [selectedExamType, setSelectedExamType] = useState<string>("TYT");
   const [selectedSubject, setSelectedSubject] = useState<string>("Tümü");
+  const [userValidated, setUserValidated] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // Demo: Net skor verisi (gerçekte fetch ile dinamik olmalı)
-  const months = ["Eylül", "Ekim", "Kasım", "Aralık", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran"];
-  const allNetScoreData = [
-    // TYT verileri
-    { ay: "Eylül", net: 75.5, subject: "Tümü", examType: "TYT" },
-    { ay: "Ekim", net: 85.0, subject: "Tümü", examType: "TYT" },
-    { ay: "Kasım", net: 94.75, subject: "Tümü", examType: "TYT" },
-    { ay: "Aralık", net: 94.5, subject: "Tümü", examType: "TYT" },
-    { ay: "Eylül", net: 20, subject: "Türkçe", examType: "TYT" },
-    { ay: "Ekim", net: 22, subject: "Türkçe", examType: "TYT" },
-    { ay: "Kasım", net: 25, subject: "Türkçe", examType: "TYT" },
-    { ay: "Aralık", net: 24, subject: "Türkçe", examType: "TYT" },
-    { ay: "Eylül", net: 18, subject: "Temel Matematik", examType: "TYT" },
-    { ay: "Ekim", net: 21, subject: "Temel Matematik", examType: "TYT" },
-    { ay: "Kasım", net: 23, subject: "Temel Matematik", examType: "TYT" },
-    { ay: "Aralık", net: 25, subject: "Temel Matematik", examType: "TYT" },
-    { ay: "Eylül", net: 19, subject: "Fen Bilimleri", examType: "TYT" },
-    { ay: "Ekim", net: 20, subject: "Fen Bilimleri", examType: "TYT" },
-    { ay: "Kasım", net: 23, subject: "Fen Bilimleri", examType: "TYT" },
-    { ay: "Aralık", net: 23, subject: "Fen Bilimleri", examType: "TYT" },
-    { ay: "Eylül", net: 18.5, subject: "Sosyal Bilimler", examType: "TYT" },
-    { ay: "Ekim", net: 22, subject: "Sosyal Bilimler", examType: "TYT" },
-    { ay: "Kasım", net: 23.75, subject: "Sosyal Bilimler", examType: "TYT" },
-    { ay: "Aralık", net: 22.5, subject: "Sosyal Bilimler", examType: "TYT" },
-    // AYT için veri yok (demo)
-  ];
+  // Net skor verisi - kullanıcının gerçek verilerinden
+  const [netScoreData, setNetScoreData] = useState<any[]>([]);
+  const [hasData, setHasData] = useState(false);
   const subjects = ["Tümü", "Türkçe", "Temel Matematik", "Fen Bilimleri", "Sosyal Bilimler"];
-  // Fill months for selected subject and exam type
-  const netScoreData = months.map(month => {
-    const found = allNetScoreData.find(d => d.subject === selectedSubject && d.ay === month && d.examType === selectedExamType);
-    return found ? found : { ay: month, net: null };
-  });
-  const hasData = netScoreData.some(d => d.net !== null);
 
   // Ders ve alt-ders seçenekleri
   const mainSubjects = [
@@ -104,12 +77,41 @@ export default function AnalysisClient() {
   const [subAchievementDist, setSubAchievementDist] = useState<any[]>([]);
 
   useEffect(() => {
+    async function validateUser() {
+      const userIdFromUrl = searchParams.get('user_id');
+      if (!userIdFromUrl) {
+        router.push('/landing');
+        return;
+      }
+
+      setLoading(true);
+      const validationResult = await validateUserId(userIdFromUrl);
+      
+      if (validationResult.success) {
+        setUserId(userIdFromUrl);
+        setUserValidated(true);
+      } else {
+        setError(validationResult.error || "Geçersiz kullanıcı ID");
+        setTimeout(() => {
+          router.push('/landing');
+        }, 2000);
+        return;
+      }
+      
+      setLoading(false);
+    }
+    validateUser();
+  }, [searchParams, router]);
+
+  useEffect(() => {
     async function fetchAnalyses() {
+      if (!userValidated || !userId) return;
+      
       setLoading(true);
       setError(null);
       
-      // Fetch all question analyses for the demo user
-      const result = await getQuestionAnalysesByUser('demo_user');
+      // Fetch all question analyses for the user
+      const result = await getQuestionAnalysesByUser(userId);
       if (result.success) {
         setAnalyses(result.data || []);
       } else {
@@ -118,7 +120,75 @@ export default function AnalysisClient() {
       setLoading(false);
     }
     fetchAnalyses();
-  }, []);
+  }, [userValidated, userId]);
+
+  // Fetch net score data for the user
+  useEffect(() => {
+    async function fetchNetScoreData() {
+      if (!userValidated || !userId) return;
+
+      try {
+        // Fetch exams and subjects for the user
+        const { data: examsData } = await supabase
+          .from('exams')
+          .select('*')
+          .eq('user_id', userId)
+          .order('exam_date', { ascending: true });
+
+        const { data: subjectsData } = await supabase
+          .from('subjects')
+          .select('*')
+          .eq('user_id', userId);
+
+        if (!examsData || !subjectsData) return;
+
+        // Process data to create net score chart data
+        const chartData = examsData.map((exam: any) => {
+          const examSubjects = subjectsData.filter((s: any) => s.exam_id === exam.id);
+          
+          // Calculate nets for each subject category
+          const subjectNets: Record<string, number> = {};
+          
+          examSubjects.forEach((subject: any) => {
+            const subjectName = subject.subject_name;
+            const net = (subject.correct_answers || 0) - ((subject.wrong_answers || 0) * 0.25);
+            
+            // Group subjects into main categories
+            if (subjectName === "Türkçe") {
+              subjectNets["Türkçe"] = (subjectNets["Türkçe"] || 0) + net;
+            } else if (["Matematik", "Geometri"].includes(subjectName)) {
+              subjectNets["Temel Matematik"] = (subjectNets["Temel Matematik"] || 0) + net;
+            } else if (["Fizik", "Kimya", "Biyoloji"].includes(subjectName)) {
+              subjectNets["Fen Bilimleri"] = (subjectNets["Fen Bilimleri"] || 0) + net;
+            } else if (["Tarih", "Coğrafya", "Felsefe", "Din"].includes(subjectName)) {
+              subjectNets["Sosyal Bilimler"] = (subjectNets["Sosyal Bilimler"] || 0) + net;
+            }
+          });
+
+          // Calculate total net
+          const totalNet = Object.values(subjectNets).reduce((sum, net) => sum + net, 0);
+          subjectNets["Tümü"] = totalNet;
+
+          const examDate = new Date(exam.exam_date);
+          const monthName = examDate.toLocaleDateString('tr-TR', { month: 'long' });
+
+          return {
+            ay: monthName,
+            examType: exam.exam_type || "TYT",
+            examName: exam.exam_name,
+            ...subjectNets
+          };
+        });
+
+                 setNetScoreData(chartData);
+         setHasData(chartData.length > 0 && chartData.some((d: any) => d.examType === selectedExamType));
+      } catch (error) {
+        console.error('Net score data fetch error:', error);
+      }
+    }
+
+    fetchNetScoreData();
+  }, [userValidated, userId]);
 
   // Aggregate analizler: filtrele ve chart verilerini hazırla
   useEffect(() => {
@@ -204,6 +274,38 @@ export default function AnalysisClient() {
     setSelectedSubSubject("all");
   }, [selectedMainSubject]);
 
+  // Exam type değiştiğinde hasData'yı güncelle
+  useEffect(() => {
+    setHasData(netScoreData.length > 0 && netScoreData.some((d: any) => d.examType === selectedExamType));
+  }, [selectedExamType, netScoreData]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">
+            {!userValidated ? "Kullanıcı doğrulanıyor..." : "Analizler yükleniyor..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Hata</h2>
+          <p className="text-gray-600">{error}</p>
+          {error.includes("Geçersiz kullanıcı") && (
+            <p className="text-sm text-gray-500 mt-2">Anasayfaya yönlendiriliyorsunuz...</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
         {/* TYT/AYT Seçimi */}
@@ -240,12 +342,12 @@ export default function AnalysisClient() {
             <CardContent>
               <div className="w-full h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={netScoreData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                  <LineChart data={netScoreData.filter((d: any) => d.examType === selectedExamType)} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
                     <XAxis dataKey="ay" axisLine={true} tickLine={false} padding={{ left: 30, right: 30 }} />
                     <YAxis axisLine={true} tickLine={false} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="net" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, fill: '#8b5cf6' }}>
-                      <LabelList dataKey="net" position="top" fontSize={14} fill="#fff" />
+                    <Line type="monotone" dataKey={selectedSubject} stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, fill: '#8b5cf6' }}>
+                      <LabelList dataKey={selectedSubject} position="top" fontSize={14} fill="#fff" />
                     </Line>
                   </LineChart>
                 </ResponsiveContainer>

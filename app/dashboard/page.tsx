@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,13 +14,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { format } from "date-fns"
 import { tr } from "date-fns/locale"
-import { supabase, testSupabaseConnection, saveExam, saveSubject, uploadImage, batchSaveQuestionAnalyses } from "@/lib/supabase"
+import { supabase, testSupabaseConnection, saveExam, saveSubject, uploadImage, batchSaveQuestionAnalyses, validateUserId } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { v4 as uuidv4 } from "uuid"
 import { Loader2, Brain, Eye, CheckCircle } from "lucide-react"
 import { batchAnalyzeImages } from "@/lib/gemini"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import Header from "@/components/ui/header"
 
 // Exam type configurations
@@ -76,6 +76,7 @@ export default function Dashboard() {
   const [date, setDate] = useState<Date>(new Date())
   const [wrongAnswerFiles, setWrongAnswerFiles] = useState<File[]>([])
   const [blankAnswerFiles, setBlankAnswerFiles] = useState<File[]>([])
+
   const [examType, setExamType] = useState<string>("")
   const [aytType, setAytType] = useState<string>("")
   const [examName, setExamName] = useState<string>("")
@@ -89,11 +90,45 @@ export default function Dashboard() {
   const [lastSavedExamId, setLastSavedExamId] = useState<string | null>(null)
   const [analysisComplete, setAnalysisComplete] = useState<boolean>(false)
   const [analysisResults, setAnalysisResults] = useState<number>(0)
+  const [userIdValid, setUserIdValid] = useState<boolean>(false)
+  const [isValidatingUser, setIsValidatingUser] = useState<boolean>(true)
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  // User ID validation
+  useEffect(() => {
+    async function validateUser() {
+      const userId = searchParams.get('user_id')
+      
+      if (!userId) {
+        router.push('/landing')
+        return
+      }
+
+      const validation = await validateUserId(userId)
+      
+      if (!validation.success) {
+        toast({
+          title: "Geçersiz Erişim",
+          description: "Geçersiz User ID. Ana sayfaya yönlendiriliyorsunuz.",
+          variant: "destructive",
+        })
+        router.push('/landing')
+        return
+      }
+
+      setUserIdValid(true)
+      setIsValidatingUser(false)
+    }
+
+    validateUser()
+  }, [searchParams, router, toast])
 
   // Sayfa yüklendiğinde Supabase bağlantısını test et
   useEffect(() => {
+    if (!userIdValid) return
+
     async function checkConnection() {
       const result = await testSupabaseConnection()
       setConnectionStatus(result.success ? "connected" : "error")
@@ -108,7 +143,7 @@ export default function Dashboard() {
     }
 
     checkConnection()
-  }, [toast])
+  }, [toast, userIdValid])
 
   // Subject states - dynamic based on exam type
   const [subjects, setSubjects] = useState<Record<string, { correct: number; wrong: number; blank: number }>>({})
@@ -282,6 +317,8 @@ export default function Dashboard() {
       }
     }
 
+
+
     return true
   }
 
@@ -311,12 +348,19 @@ export default function Dashboard() {
       // Calculate total net score
       const totalNetScore = calculateTotalNetScore()
 
+      // Get user_id from URL
+      const userId = searchParams.get('user_id')
+      if (!userId) {
+        throw new Error("User ID bulunamadı")
+      }
+
       // 1. Insert exam record - optimize edilmiş fonksiyonu kullan
       const examResult = await saveExam({
         exam_type: examType + (examType === "AYT" ? ` - ${aytType}` : ""),
         exam_date: date!.toISOString(),
         exam_name: examName,
         total_net_score: totalNetScore,
+        user_id: userId,
       })
 
       if (!examResult.success || !examResult.data) {
@@ -339,6 +383,7 @@ export default function Dashboard() {
               wrong_answers: scores.wrong,
               blank_answers: scores.blank,
               net_score: netScore,
+              user_id: userId,
             })
 
             if (!result.success) {
@@ -378,7 +423,7 @@ export default function Dashboard() {
 
         for (const { file, type } of allFiles) {
           try {
-            const result = await uploadImage(file, examId, type)
+            const result = await uploadImage(file, examId, type, userId)
             if (result.success) {
               successfulUploads++
             }
@@ -402,7 +447,7 @@ export default function Dashboard() {
           
           try {
             // Yalnızca Gemini API ile analiz
-            const uploadedFiles = allFiles.map(f => f.file)
+            const uploadedFiles = allFiles.map(f => ({ file: f.file, type: f.type }))
             
             const analyses = await batchAnalyzeImages(uploadedFiles, examId, (current, total) => {
               setAnalysisProgress(Math.floor((current / total) * 80))
@@ -431,6 +476,7 @@ export default function Dashboard() {
                 error_type: analysis.error_type,
                 solution_strategy: analysis.solution_strategy,
                 solution_steps_count: analysis.solution_steps_count,
+                user_id: userId,
               }))
               
               // Save analyses to database
@@ -514,6 +560,21 @@ export default function Dashboard() {
       if (interval) clearInterval(interval);
     };
   }, [isAnalyzing, analysisComplete]);
+
+  if (isValidatingUser) {
+    return (
+      <div className="min-h-screen w-full overflow-x-hidden bg-slate-900 text-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-300">Erişim kontrol ediliyor...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!userIdValid) {
+    return null
+  }
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-slate-900 text-gray-100">
@@ -630,6 +691,8 @@ export default function Dashboard() {
             })}
           </div>
         )}
+
+
 
         {/* File Upload Cards */}
         <div className="mb-6 grid gap-4 md:grid-cols-2">
@@ -768,12 +831,13 @@ export default function Dashboard() {
                     variant="outline"
                     onClick={() => {
                       setShowAnalysisDialog(false)
-                      if (lastSavedExamId) {
-                        router.push(`/exam-results?exam_id=${lastSavedExamId}`)
+                      const userId = searchParams.get('user_id')
+                      if (lastSavedExamId && userId) {
+                        router.push(`/exam-results?exam_id=${lastSavedExamId}&user_id=${userId}`)
                       } else {
                         toast({
                           title: "Hata",
-                          description: "Analiz edilen sınav bulunamadı.",
+                          description: "Analiz edilen sınav bulunamadı veya kullanıcı bilgisi eksik.",
                           variant: "destructive",
                         })
                       }

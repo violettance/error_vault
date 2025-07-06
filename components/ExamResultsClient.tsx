@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { getQuestionAnalysesByUser } from "@/lib/supabase";
+import { useSearchParams, useRouter } from "next/navigation";
+import { getQuestionAnalysesByUser, validateUserId } from "@/lib/supabase";
 import { generatePerformanceReport } from "@/lib/gemini";
 import { Loader2, FileText, Sparkles } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -25,10 +26,15 @@ import { supabase } from "@/lib/supabase";
 
 export default function ExamResultsClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { toast } = useToast();
   const examIdFromUrl = searchParams.get("exam_id");
+  const userId = searchParams.get("user_id");
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userIdValid, setUserIdValid] = useState<boolean>(false);
+  const [isValidatingUser, setIsValidatingUser] = useState<boolean>(true);
   const [selectedExamId, setSelectedExamId] = useState<string>(examIdFromUrl || "");
   const [exams, setExams] = useState<Array<{id: string, name: string}>>([]);
   const [chartData, setChartData] = useState<any>({
@@ -49,8 +55,37 @@ export default function ExamResultsClient() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [totalQuestions, setTotalQuestions] = useState(0);
 
+  // User ID validation
+  useEffect(() => {
+    async function validateUser() {
+      if (!userId) {
+        router.push('/landing')
+        return
+      }
+
+      const validation = await validateUserId(userId)
+      
+      if (!validation.success) {
+        toast({
+          title: "Geçersiz Erişim",
+          description: "Geçersiz User ID. Ana sayfaya yönlendiriliyorsunuz.",
+          variant: "destructive",
+        })
+        router.push('/landing')
+        return
+      }
+
+      setUserIdValid(true)
+      setIsValidatingUser(false)
+    }
+
+    validateUser()
+  }, [userId, router, toast])
+
   // Initialize data
   useEffect(() => {
+    if (!userIdValid) return
+    
     let mounted = true;
     
     async function initializeData() {
@@ -58,11 +93,11 @@ export default function ExamResultsClient() {
         setLoading(true);
         setError(null);
         
-        // Fetch all exams for demo_user (not just those with analyses)
+        // Fetch all exams for current user (not just those with analyses)
         const { data: examsData } = await supabase
           .from('exams')
           .select('id, exam_name')
-          .eq('user_id', 'demo_user')
+          .eq('user_id', userId!)
           .order('exam_date', { ascending: false });
         
         const examsList: Array<{id: string, name: string}> = (examsData || []).map(exam => ({
@@ -100,7 +135,7 @@ export default function ExamResultsClient() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [userIdValid, userId]);
 
   // Update chart data when exam selection changes
   useEffect(() => {
@@ -125,7 +160,7 @@ export default function ExamResultsClient() {
       }
       
       try {
-        const analysesResult = await getQuestionAnalysesByUser('demo_user');
+        const analysesResult = await getQuestionAnalysesByUser(userId!);
         if (!analysesResult.success) return;
         
         const filteredAnalyses = (analysesResult.data || []).filter((a: any) => a.exam_id === selectedExamId);
@@ -325,8 +360,41 @@ export default function ExamResultsClient() {
         }
       }
 
+      // Get exam statistics from subjects table
+      const { data: examStatsData } = await supabase
+        .from('subjects')
+        .select('subject_name, correct_answers, wrong_answers, blank_answers, net_score')
+        .eq('exam_id', selectedExamId);
+
+      const examStats = (examStatsData || []).map(stat => ({
+        subject: stat.subject_name,
+        correct: stat.correct_answers || 0,
+        wrong: stat.wrong_answers || 0,
+        blank: stat.blank_answers || 0,
+        net: stat.net_score || 0
+      }));
+
+      // Get detailed question analyses
+      const analysesResult = await getQuestionAnalysesByUser(userId!);
+      let detailedAnalyses: Array<{subject: string, topic: string, sub_achievement: string, question_status: string, difficulty_level: string, error_type: string, solution_strategy: string, learning_level: string, selectivity: string}> = [];
+      if (analysesResult.success) {
+        detailedAnalyses = (analysesResult.data || [])
+          .filter((a: any) => a.exam_id === selectedExamId)
+          .map((a: any) => ({
+            subject: a.subject,
+            topic: a.topic,
+            sub_achievement: a.sub_achievement,
+            question_status: a.question_status,
+            difficulty_level: a.difficulty_level,
+            error_type: a.error_type,
+            solution_strategy: a.solution_strategy,
+            learning_level: a.learning_level,
+            selectivity: a.selectivity
+          }));
+      }
+
       // Generate new report if not cached or cache expired
-      const report = await generatePerformanceReport(selectedExamName, chartData, totalQuestions);
+      const report = await generatePerformanceReport(selectedExamName, chartData, totalQuestions, examStats, detailedAnalyses);
       setAiReport(report);
       
       // Save to localStorage
@@ -345,6 +413,21 @@ export default function ExamResultsClient() {
       setReportLoading(false);
     }
   };
+
+  if (isValidatingUser) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">Erişim kontrol ediliyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userIdValid) {
+    return null;
+  }
 
   if (loading) {
     return (
