@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Sparkles, Brain, TrendingUp, Target, BookOpen } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, validateUserId } from "@/lib/supabase";
 import { generatePerformanceReport } from "@/lib/gemini";
 
 // Generate detailed analysis report in natural language
@@ -89,9 +90,13 @@ Doğru strateji ve düzenli çalışma ile netlerini daha da artırabilir ve sı
 }
 
 export default function AIAnalysisClient() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [userValidated, setUserValidated] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalExams: 0,
     totalQuestions: 0,
@@ -100,9 +105,9 @@ export default function AIAnalysisClient() {
   });
 
   // Load report from localStorage
-  const loadReportFromStorage = () => {
+  const loadReportFromStorage = (userId: string) => {
     try {
-      const storageKey = 'ai_general_analysis_demo_user';
+      const storageKey = `ai_general_analysis_${userId}`;
       const storedReport = localStorage.getItem(storageKey);
       if (storedReport) {
         setReport(storedReport);
@@ -115,9 +120,9 @@ export default function AIAnalysisClient() {
   };
 
   // Save report to localStorage
-  const saveReportToStorage = (report: string) => {
+  const saveReportToStorage = (report: string, userId: string) => {
     try {
-      const storageKey = 'ai_general_analysis_demo_user';
+      const storageKey = `ai_general_analysis_${userId}`;
       localStorage.setItem(storageKey, report);
     } catch (error) {
       console.error('Error saving report to localStorage:', error);
@@ -125,36 +130,49 @@ export default function AIAnalysisClient() {
   };
 
   // Generate comprehensive AI analysis
-  const generateComprehensiveAnalysis = async () => {
+  const generateComprehensiveAnalysis = async (userId: string) => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch all exams for demo_user (excluding Demo TYT)
+      // Fetch all exams for user (excluding Demo TYT)
       const { data: examsData } = await supabase
         .from('exams')
         .select('*')
-        .eq('user_id', 'demo_user')
+        .eq('user_id', userId)
         .neq('exam_name', 'Demo TYT Sınavı')
         .order('exam_date', { ascending: true });
 
-      // Fetch all question analyses for demo_user (excluding Demo TYT)
+      // Fetch all question analyses for user (excluding Demo TYT)
       const { data: analysesData } = await supabase
         .from('question_analyses')
         .select('*, exams!inner(exam_name)')
-        .eq('user_id', 'demo_user')
+        .eq('user_id', userId)
         .neq('exams.exam_name', 'Demo TYT Sınavı');
 
-      // Fetch all subjects for demo_user (excluding Demo TYT)
+      // Fetch all subjects for user (excluding Demo TYT)
       const { data: subjectsData } = await supabase
         .from('subjects')
         .select('*, exams!inner(exam_name)')
-        .eq('user_id', 'demo_user')
+        .eq('user_id', userId)
         .neq('exams.exam_name', 'Demo TYT Sınavı')
         .order('exam_id');
 
       if (!examsData || !analysesData || !subjectsData) {
         throw new Error('Veri alınamadı');
+      }
+
+      // Check if there's enough data for analysis
+      if (examsData.length === 0) {
+        setError('Rapor oluşturması için en az 1 deneme sınavı eklenmelidir.');
+        setLoading(false);
+        return;
+      }
+
+      if (analysesData.length === 0) {
+        setError('Rapor oluşturması için en az 1 yanlış veya boş soru analizi eklenmelidir.');
+        setLoading(false);
+        return;
       }
 
       // Calculate statistics
@@ -221,7 +239,7 @@ export default function AIAnalysisClient() {
       const aiReport = analysisText;
       
       setReport(aiReport);
-      saveReportToStorage(aiReport);
+      saveReportToStorage(aiReport, userId);
 
     } catch (error) {
       console.error('AI Analysis generation error:', error);
@@ -232,19 +250,48 @@ export default function AIAnalysisClient() {
   };
 
   useEffect(() => {
+    async function validateUser() {
+      const userIdFromUrl = searchParams.get('user_id');
+      if (!userIdFromUrl) {
+        router.push('/landing');
+        return;
+      }
+
+      setLoading(true);
+      const validationResult = await validateUserId(userIdFromUrl);
+      
+      if (validationResult.success) {
+        setUserId(userIdFromUrl);
+        setUserValidated(true);
+      } else {
+        setError(validationResult.error || "Geçersiz kullanıcı ID");
+        setTimeout(() => {
+          router.push('/landing');
+        }, 2000);
+        return;
+      }
+      
+      setLoading(false);
+    }
+    validateUser();
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (!userValidated || !userId) return;
+    
     // For debugging, always regenerate (remove this line in production)
-    localStorage.removeItem('ai_general_analysis_demo_user'); // Clear for subjects table calculation
+    localStorage.removeItem(`ai_general_analysis_${userId}`); // Clear for subjects table calculation
     
     // First try to load from localStorage
-    const reportLoaded = loadReportFromStorage();
+    const reportLoaded = loadReportFromStorage(userId);
     
     // If no stored report, generate new one
     if (!reportLoaded) {
-      generateComprehensiveAnalysis();
+      generateComprehensiveAnalysis(userId);
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [userValidated, userId]);
 
   if (loading) {
     return (
@@ -257,10 +304,14 @@ export default function AIAnalysisClient() {
                 <Sparkles className="h-6 w-6 text-blue-500 animate-bounce" />
                 <Loader2 className="h-8 w-8 text-green-500 animate-spin" />
               </div>
-              <h3 className="text-xl font-semibold text-white">AI Kapsamlı Analiz Hazırlanıyor</h3>
+              <h3 className="text-xl font-semibold text-white">
+                {!userValidated ? "Kullanıcı doğrulanıyor..." : "AI Kapsamlı Analiz Hazırlanıyor"}
+              </h3>
               <p className="text-gray-400 text-center max-w-md">
-                Tüm deneme sonuçların, soru analizlerin ve performans verilerini inceliyorum. 
-                Bu işlem biraz zaman alabilir...
+                {!userValidated 
+                  ? "Kullanıcı kimliğiniz doğrulanıyor..."
+                  : "Tüm deneme sonuçların, soru analizlerin ve performans verilerini inceliyorum. Bu işlem biraz zaman alabilir..."
+                }
               </p>
               <div className="flex space-x-2 mt-4">
                 <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
@@ -279,8 +330,13 @@ export default function AIAnalysisClient() {
       <Card className="bg-gray-800 border-gray-700">
         <CardContent className="p-8">
           <div className="text-center">
-            <div className="text-red-400 text-lg font-semibold mb-2">Analiz Oluşturulamadı</div>
+            <div className="text-red-400 text-lg font-semibold mb-2">
+              {error.includes("Geçersiz kullanıcı") ? "Geçersiz Kullanıcı" : "Analiz Oluşturulamadı"}
+            </div>
             <p className="text-gray-400">{error}</p>
+            {error.includes("Geçersiz kullanıcı") && (
+              <p className="text-sm text-gray-500 mt-2">Anasayfaya yönlendiriliyorsunuz...</p>
+            )}
           </div>
         </CardContent>
       </Card>

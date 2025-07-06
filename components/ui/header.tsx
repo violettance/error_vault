@@ -3,11 +3,13 @@
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const userId = searchParams.get('user_id');
 
   return (
     <header className="sticky top-0 z-10 border-b border-gray-800 bg-gray-900 px-4 py-4">
@@ -22,7 +24,7 @@ export default function Header() {
             className={
               pathname === "/dashboard" ? "bg-[#8b5cf6] text-white hover:bg-[#7c3aed]" : "bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
             }
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push(`/dashboard${userId ? `?user_id=${userId}` : ''}`)}
           >
             Yeni Deneme Girişi
           </Button>
@@ -32,7 +34,7 @@ export default function Header() {
                 ? "bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                 : "bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
             }
-            onClick={() => router.push("/exam-results")}
+            onClick={() => router.push(`/exam-results${userId ? `?user_id=${userId}` : ''}`)}
           >
             Deneme Sonuçları
           </Button>
@@ -42,7 +44,7 @@ export default function Header() {
                 ? "bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                 : "bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
             }
-            onClick={() => router.push("/analiz")}
+            onClick={() => router.push(`/analiz${userId ? `?user_id=${userId}` : ''}`)}
           >
             Gelişim Raporu
           </Button>
@@ -52,7 +54,7 @@ export default function Header() {
                 ? "bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                 : "bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
             }
-            onClick={() => router.push("/ai-deneme-analizi")}
+            onClick={() => router.push(`/ai-deneme-analizi${userId ? `?user_id=${userId}` : ''}`)}
           >
             AI Deneme Analizi
           </Button>
@@ -79,7 +81,7 @@ export default function Header() {
                   className={
                     pathname === "/dashboard" ? "w-full bg-[#8b5cf6] text-white hover:bg-[#7c3aed]" : "w-full bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
                   }
-                  onClick={() => router.push("/dashboard")}
+                  onClick={() => router.push(`/dashboard${userId ? `?user_id=${userId}` : ''}`)}
                 >
                   Yeni Deneme Girişi
                 </Button>
@@ -89,7 +91,7 @@ export default function Header() {
                       ? "w-full bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                       : "w-full bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
                   }
-                  onClick={() => router.push("/exam-results")}
+                  onClick={() => router.push(`/exam-results${userId ? `?user_id=${userId}` : ''}`)}
                 >
                   Deneme Sonuçları
                 </Button>
@@ -99,7 +101,7 @@ export default function Header() {
                       ? "w-full bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                       : "w-full bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
                   }
-                  onClick={() => router.push("/analiz")}
+                  onClick={() => router.push(`/analiz${userId ? `?user_id=${userId}` : ''}`)}
                 >
                   Gelişim Raporu
                 </Button>
@@ -109,7 +111,7 @@ export default function Header() {
                       ? "w-full bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
                       : "w-full bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
                   }
-                  onClick={() => router.push("/ai-deneme-analizi")}
+                  onClick={() => router.push(`/ai-deneme-analizi${userId ? `?user_id=${userId}` : ''}`)}
                 >
                   AI Deneme Analizi
                 </Button>

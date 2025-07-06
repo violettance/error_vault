@@ -9,6 +9,27 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      early_access_emails: {
+        Row: {
+          created_at: string | null
+          email: string
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       exam_images: {
         Row: {
           created_at: string | null
@@ -18,6 +39,7 @@ export type Database = {
           id: string
           image_type: string | null
           image_url: string
+          user_id: string
         }
         Insert: {
           created_at?: string | null
@@ -27,6 +49,7 @@ export type Database = {
           id?: string
           image_type?: string | null
           image_url: string
+          user_id?: string
         }
         Update: {
           created_at?: string | null
@@ -36,6 +59,7 @@ export type Database = {
           id?: string
           image_type?: string | null
           image_url?: string
+          user_id?: string
         }
         Relationships: [
           {
@@ -56,6 +80,7 @@ export type Database = {
           id: string
           total_net_score: number | null
           updated_at: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string | null
@@ -65,6 +90,7 @@ export type Database = {
           id?: string
           total_net_score?: number | null
           updated_at?: string | null
+          user_id?: string
         }
         Update: {
           created_at?: string | null
@@ -74,6 +100,7 @@ export type Database = {
           id?: string
           total_net_score?: number | null
           updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -90,6 +117,7 @@ export type Database = {
           new_generation_question: boolean | null
           question: string
           question_format: string | null
+          question_status: string | null
           question_type: string | null
           related_topics: string[] | null
           selectivity: string | null
@@ -101,6 +129,7 @@ export type Database = {
           subject: string
           topic: string
           updated_at: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string | null
@@ -114,6 +143,7 @@ export type Database = {
           new_generation_question?: boolean | null
           question: string
           question_format?: string | null
+          question_status?: string | null
           question_type?: string | null
           related_topics?: string[] | null
           selectivity?: string | null
@@ -125,6 +155,7 @@ export type Database = {
           subject: string
           topic: string
           updated_at?: string | null
+          user_id?: string
         }
         Update: {
           created_at?: string | null
@@ -138,6 +169,7 @@ export type Database = {
           new_generation_question?: boolean | null
           question?: string
           question_format?: string | null
+          question_status?: string | null
           question_type?: string | null
           related_topics?: string[] | null
           selectivity?: string | null
@@ -149,6 +181,7 @@ export type Database = {
           subject?: string
           topic?: string
           updated_at?: string | null
+          user_id?: string
         }
         Relationships: [
           {
@@ -177,6 +210,7 @@ export type Database = {
           net_score: number | null
           subject_name: string
           updated_at: string | null
+          user_id: string
           wrong_answers: number | null
         }
         Insert: {
@@ -188,6 +222,7 @@ export type Database = {
           net_score?: number | null
           subject_name: string
           updated_at?: string | null
+          user_id?: string
           wrong_answers?: number | null
         }
         Update: {
@@ -199,6 +234,7 @@ export type Database = {
           net_score?: number | null
           subject_name?: string
           updated_at?: string | null
+          user_id?: string
           wrong_answers?: number | null
         }
         Relationships: [
@@ -211,12 +247,45 @@ export type Database = {
           },
         ]
       }
+      users: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          id: string
+          is_active: boolean | null
+          name: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      insert_early_access_email: {
+        Args: { email_param: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

@@ -6,13 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Mail, User, Target, ArrowRight, CheckCircle, Sparkles } from "lucide-react";
+import { Mail, User, Target, ArrowRight, CheckCircle, Sparkles, Loader2 } from "lucide-react";
+import { validateUserId } from "@/lib/supabase";
 
 export default function LandingClient() {
   const [email, setEmail] = useState("");
   const [userId, setUserId] = useState("");
   const [emailSubmitted, setEmailSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isValidatingUserId, setIsValidatingUserId] = useState(false);
   const router = useRouter();
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -46,19 +48,30 @@ export default function LandingClient() {
     }
   };
 
-  const handleErrorVaultAccess = () => {
+  const handleErrorVaultAccess = async () => {
     if (!userId.trim()) {
       alert("Lütfen User ID'nizi girin");
       return;
     }
     
-    // Only allow access if user_id is exactly "demo_user"
-    if (userId.trim() !== "demo_user") {
-      alert("Geçersiz User ID. Lütfen doğru User ID'nizi girin.");
-      return;
-    }
+    setIsValidatingUserId(true);
     
-    router.push(`/dashboard?user_id=${userId}`);
+    try {
+      const validation = await validateUserId(userId.trim());
+      
+      if (!validation.success) {
+        alert(validation.error || "Geçersiz User ID. Lütfen doğru User ID'nizi girin.");
+        return;
+      }
+      
+      // User ID geçerli, dashboard'a yönlendir
+      router.push(`/dashboard?user_id=${userId.trim()}`);
+    } catch (error) {
+      console.error('User ID validation error:', error);
+      alert("User ID doğrulanırken bir hata oluştu. Lütfen tekrar deneyin.");
+    } finally {
+      setIsValidatingUserId(false);
+    }
   };
 
   return (
@@ -197,20 +210,30 @@ export default function LandingClient() {
               <div className="space-y-4">
                 <div className="relative">
                                      <User className="absolute left-4 top-4 w-5 h-5 text-purple-400" />
-                                     <Input
-                     type="text"
-                     placeholder="User ID'nizi girin (örn: demo_user)"
-                     value={userId}
-                     onChange={(e) => setUserId(e.target.value)}
-                     className="pl-12 h-12 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-purple-500 focus:ring-purple-500"
-                   />
+                                                       <Input
+                    type="text"
+                    placeholder="User ID'nizi girin (örn: demo_user)"
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
+                    className="pl-12 h-12 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-purple-500 focus:ring-purple-500"
+                  />
                 </div>
-                                 <Button 
-                   onClick={handleErrorVaultAccess}
-                   className="w-full h-12 bg-purple-600 hover:bg-purple-700 text-white font-medium"
-                 >
-                  ErrorVault'a Erişim Sağla
-                  <ArrowRight className="ml-2 w-4 h-4" />
+                                                 <Button 
+                  onClick={handleErrorVaultAccess}
+                  className="w-full h-12 bg-purple-600 hover:bg-purple-700 text-white font-medium"
+                  disabled={isValidatingUserId}
+                >
+                  {isValidatingUserId ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Doğrulanıyor...
+                    </>
+                  ) : (
+                    <>
+                      ErrorVault'a Erişim Sağla
+                      <ArrowRight className="ml-2 w-4 h-4" />
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
