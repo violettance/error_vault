@@ -204,3 +204,27 @@ export async function getQuestionAnalyses(examId: string) {
     }
   }
 }
+
+// User ID'ye göre soru analizlerini getirmek için fonksiyon
+export async function getQuestionAnalysesByUser(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("question_analyses")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Question analyses getirme hatası:", error)
+      throw new Error(`Soru analizleri getirilemedi: ${error.message}`)
+    }
+
+    return { success: true, data }
+  } catch (err) {
+    console.error("Question analyses getirme exception:", err)
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu",
+    }
+  }
+}

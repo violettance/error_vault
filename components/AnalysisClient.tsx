@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { getQuestionAnalyses } from "@/lib/supabase";
+import { getQuestionAnalyses, getQuestionAnalysesByUser } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,6 @@ export default function AnalysisClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const examId = searchParams.get("exam_id");
   const [loading, setLoading] = useState(true);
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +87,16 @@ export default function AnalysisClient() {
     "Sosyal Bilimler": ["Tarih", "Coğrafya", "Felsefe", "Din"],
   };
   const [selectedMainSubject, setSelectedMainSubject] = useState<string>(mainSubjects[0].value);
-  const [selectedSubSubject, setSelectedSubSubject] = useState<string>("");
+  const [selectedSubSubject, setSelectedSubSubject] = useState<string>("all");
+
+  // Alt ders seçenekleri için helper function
+  const getSubSubjectOptions = (mainSubject: string) => {
+    const options = subSubjects[mainSubject] || [];
+    return [
+      { label: "Tümü", value: "all" },
+      ...options.map(sub => ({ label: sub, value: sub }))
+    ];
+  };
 
   // Analiz verileri için state
   const [difficultyDist, setDifficultyDist] = useState<any[]>([]);
@@ -97,14 +105,11 @@ export default function AnalysisClient() {
 
   useEffect(() => {
     async function fetchAnalyses() {
-      if (!examId) {
-        setError("Sınav ID'si bulunamadı.");
-        setLoading(false);
-        return;
-      }
       setLoading(true);
       setError(null);
-      const result = await getQuestionAnalyses(examId);
+      
+      // Fetch all question analyses for the demo user
+      const result = await getQuestionAnalysesByUser('demo_user');
       if (result.success) {
         setAnalyses(result.data || []);
       } else {
@@ -113,91 +118,94 @@ export default function AnalysisClient() {
       setLoading(false);
     }
     fetchAnalyses();
-  }, [examId]);
+  }, []);
 
   // Aggregate analizler: filtrele ve chart verilerini hazırla
   useEffect(() => {
-    if (!analyses || analyses.length === 0) {
-      setDifficultyDist([]);
-      setErrorTypeDist([]);
-      setSubAchievementDist([]);
-      return;
+    if (analyses.length === 0) return;
+
+    // Filtreleme: Ana ders ve alt ders seçimine göre
+    let filteredAnalyses = analyses;
+    
+    // Ana ders filtresi - ana dersi alt derslere eşleştir
+    if (selectedMainSubject) {
+      filteredAnalyses = filteredAnalyses.filter(analysis => {
+        // Ana ders seçimine göre hangi alt dersleri dahil edeceğimizi belirle
+        if (selectedMainSubject === "Türkçe") {
+          return analysis.subject === "Türkçe";
+        } else if (selectedMainSubject === "Temel Matematik") {
+          return ["Matematik", "Geometri"].includes(analysis.subject);
+        } else if (selectedMainSubject === "Fen Bilimleri") {
+          return ["Fizik", "Kimya", "Biyoloji"].includes(analysis.subject);
+        } else if (selectedMainSubject === "Sosyal Bilimler") {
+          return ["Tarih", "Coğrafya", "Felsefe", "Din"].includes(analysis.subject);
+        }
+        return false;
+      });
     }
-    // Filtre: subject ve alt subject
-    let filtered = analyses.filter((a) => {
-      if (selectedMainSubject === "Türkçe") return a.subject === "Türkçe";
-      if (selectedMainSubject === "Temel Matematik") {
-        if (selectedSubSubject) return a.subject === selectedSubSubject;
-        return a.subject === "Temel Matematik" || a.subject === "Matematik" || a.subject === "Geometri";
-      }
-      if (selectedMainSubject === "Fen Bilimleri") {
-        if (selectedSubSubject) return a.subject === selectedSubSubject;
-        return a.subject === "Fen Bilimleri" || ["Fizik", "Kimya", "Biyoloji"].includes(a.subject);
-      }
-      if (selectedMainSubject === "Sosyal Bilimler") {
-        if (selectedSubSubject) return a.subject === selectedSubSubject;
-        return a.subject === "Sosyal Bilimler" || ["Tarih", "Coğrafya", "Felsefe", "Din"].includes(a.subject);
-      }
-      return false;
-    });
-    // Zorluk seviyesi dağılımı
-    const diffMap: Record<string, number> = {};
-    filtered.forEach(a => {
-      if (a.difficulty_level) diffMap[a.difficulty_level] = (diffMap[a.difficulty_level] || 0) + 1;
-    });
-    const diffArr = Object.entries(diffMap).map(([name, value]) => ({ name, value }));
-    setDifficultyDist(diffArr);
-    // Hata türü dağılımı (en çok 5)
-    const errMap: Record<string, number> = {};
-    filtered.forEach(a => {
-      if (a.error_type) errMap[a.error_type] = (errMap[a.error_type] || 0) + 1;
-    });
-    let errArr = Object.entries(errMap).map(([name, value]) => ({ name, value }));
-    errArr = errArr.sort((a, b) => b.value - a.value).slice(0, 5);
-    setErrorTypeDist(errArr);
-    // Alt kazanım dağılımı (en çok 5)
-    const subAchMap: Record<string, number> = {};
-    filtered.forEach(a => {
-      if (a.sub_achievement) subAchMap[a.sub_achievement] = (subAchMap[a.sub_achievement] || 0) + 1;
-    });
-    let subAchArr = Object.entries(subAchMap).map(([name, value]) => ({ name, value }));
-    subAchArr = subAchArr.sort((a, b) => b.value - a.value).slice(0, 5);
-    setSubAchievementDist(subAchArr);
+
+    // Alt ders filtresi - seçili alt ders varsa sadece o alt dersi göster
+    if (selectedSubSubject && selectedSubSubject !== "all") {
+      filteredAnalyses = filteredAnalyses.filter(analysis => {
+        return analysis.subject === selectedSubSubject;
+      });
+    }
+
+    // Zorluk seviyeleri dağılımı
+    const difficultyGroups = filteredAnalyses.reduce((acc, analysis) => {
+      const level = analysis.difficulty_level || 'Bilinmiyor';
+      acc[level] = (acc[level] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const difficultyData = ['Kolay', 'Orta', 'Zor'].map(level => ({
+      level,
+      count: difficultyGroups[level] || 0
+    }));
+
+    // Hata türleri dağılımı
+    const errorGroups = filteredAnalyses.reduce((acc, analysis) => {
+      const errorType = analysis.error_type || 'Bilinmiyor';
+      acc[errorType] = (acc[errorType] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const errorData = Object.entries(errorGroups).map(([type, count]) => ({
+      type,
+      count
+    }));
+
+    // Alt kazanımlar dağılımı
+    const achievementGroups = filteredAnalyses.reduce((acc, analysis) => {
+      const achievement = analysis.sub_achievement || 'Bilinmiyor';
+      // Uzun metinleri kısalt
+      const shortAchievement = achievement.length > 50 
+        ? achievement.substring(0, 50) + '...' 
+        : achievement;
+      acc[shortAchievement] = (acc[shortAchievement] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const achievementData = Object.entries(achievementGroups)
+      .map(([achievement, count]) => ({
+        achievement,
+        count
+      }))
+      .sort((a, b) => (b.count as number) - (a.count as number)) // En çok olandan aza sırala
+      .slice(0, 10); // En fazla 10 tane göster
+
+    setDifficultyDist(difficultyData);
+    setErrorTypeDist(errorData);
+    setSubAchievementDist(achievementData);
   }, [analyses, selectedMainSubject, selectedSubSubject]);
 
+  // Ana ders değiştiğinde alt ders seçimini sıfırla
+  useEffect(() => {
+    setSelectedSubSubject("all");
+  }, [selectedMainSubject]);
+
   return (
-    <div className="min-h-screen w-full bg-gray-950 text-gray-100">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-gray-800 bg-gray-900 px-4 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <h1 className="text-xl font-bold text-white">
-            <span className="text-[#8b5cf6]">Error</span>Vault
-          </h1>
-          <div className="flex gap-3">
-            <Button
-              className={
-                pathname === "/"
-                  ? "bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
-                  : "bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
-              }
-              onClick={() => router.push("/")}
-            >
-              Yeni Deneme Girişi
-            </Button>
-            <Button
-              className={
-                pathname === "/analiz"
-                  ? "bg-[#8b5cf6] text-white hover:bg-[#7c3aed]"
-                  : "bg-gray-800 text-white border border-gray-700 hover:bg-gray-700"
-              }
-              onClick={() => router.push("/analiz")}
-            >
-              Detaylı Analiz
-            </Button>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-4 py-6">
+    <div className="space-y-6">
         {/* TYT/AYT Seçimi */}
         <div className="mb-6 flex items-center gap-4">
           <Label htmlFor="exam-type-select">Sınav Türü</Label>
@@ -260,7 +268,7 @@ export default function AnalysisClient() {
             <div className="flex flex-col sm:flex-row gap-4 mb-6">
               <div className="w-64">
                 <Label htmlFor="main-subject-select">Ders</Label>
-                <Select value={selectedMainSubject} onValueChange={v => { setSelectedMainSubject(v); setSelectedSubSubject(""); }}>
+                <Select value={selectedMainSubject} onValueChange={v => { setSelectedMainSubject(v); setSelectedSubSubject("all"); }}>
                   <SelectTrigger id="main-subject-select" className="border-gray-700 bg-gray-800">
                     <SelectValue />
                   </SelectTrigger>
@@ -279,8 +287,8 @@ export default function AnalysisClient() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="border-gray-700 bg-gray-800">
-                      {(subSubjects[selectedMainSubject] as string[]).map((s: string) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      {getSubSubjectOptions(selectedMainSubject).map((s) => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -290,19 +298,37 @@ export default function AnalysisClient() {
             {/* Zorluk Seviyeleri Bar Chart */}
             <div className="mb-8">
               <div className="font-semibold text-lg mb-1">Zorluk Seviyeleri</div>
-              <div className="text-gray-400 text-sm mb-2">Yanlış ve Boş Soruların Zorluk Seviyelerine Göre Dağılımları</div>
+              <div className="text-gray-400 text-sm mb-2">
+                Yanlış ve Boş Soruların Zorluk Seviyelerine Göre Dağılımları
+                {selectedSubSubject && (
+                  <span className="ml-2 text-[#8b5cf6]">({selectedSubSubject})</span>
+                )}
+              </div>
               {loading ? (
-                <div className="w-full h-56 flex items-center justify-center"><Loader2 className="animate-spin text-gray-400" /></div>
+                <div className="w-full h-56 flex items-center justify-center">
+                  <Loader2 className="animate-spin text-gray-400" />
+                </div>
               ) : difficultyDist.length === 0 ? (
-                <div className="w-full h-56 flex items-center justify-center text-gray-400">Veri bulunamadı</div>
+                <div className="w-full h-56 flex items-center justify-center text-gray-400">
+                  Veri bulunamadı
+                </div>
               ) : (
                 <div className="w-full h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={difficultyDist} layout="vertical">
-                      <XAxis type="number" allowDecimals={false} hide />
-                      <YAxis dataKey="name" type="category" width={120} />
-                      <RechartsTooltip />
-                      <Bar dataKey="value" fill="#8b5cf6" radius={[0, 8, 8, 0]} />
+                    <BarChart data={difficultyDist} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <XAxis dataKey="level" />
+                      <YAxis allowDecimals={false} />
+                      <RechartsTooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1f2937', 
+                          border: '1px solid #374151',
+                          borderRadius: '8px',
+                          color: '#fff'
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="count" position="top" fontSize={12} fill="#fff" />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -311,52 +337,102 @@ export default function AnalysisClient() {
             {/* Hata Türleri Donut Chart */}
             <div className="mb-8">
               <div className="font-semibold text-lg mb-1">Hata Türleri</div>
-              <div className="text-gray-400 text-sm mb-2">Yanlış ve Boş Soruların Hata Türlerine Göre Dağılımları</div>
+              <div className="text-gray-400 text-sm mb-2">
+                Yanlış ve Boş Soruların Hata Türlerine Göre Dağılımları
+                {selectedSubSubject && (
+                  <span className="ml-2 text-[#8b5cf6]">({selectedSubSubject})</span>
+                )}
+              </div>
               {loading ? (
-                <div className="w-full h-56 flex items-center justify-center"><Loader2 className="animate-spin text-gray-400" /></div>
+                <div className="w-full h-56 flex items-center justify-center">
+                  <Loader2 className="animate-spin text-gray-400" />
+                </div>
               ) : errorTypeDist.length === 0 ? (
-                <div className="w-full h-56 flex items-center justify-center text-gray-400">Veri bulunamadı</div>
+                <div className="w-full h-56 flex items-center justify-center text-gray-400">
+                  Veri bulunamadı
+                </div>
               ) : (
                 <div className="w-full h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={errorTypeDist}
-                        dataKey="value"
-                        nameKey="name"
+                        dataKey="count"
+                        nameKey="type"
                         cx="50%"
                         cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
-                        paddingAngle={2}
-                        label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                        innerRadius={60}
+                        outerRadius={100}
+                        paddingAngle={3}
+                        label={({ type, percent }) => `${type} ${(percent * 100).toFixed(0)}%`}
+                        labelLine={false}
                       >
                         {errorTypeDist.map((entry, idx) => (
-                          <Cell key={entry.name} fill={["#8b5cf6", "#a78bfa", "#c4b5fd", "#ddd6fe", "#f3e8ff"][idx % 5]} />
+                          <Cell 
+                            key={entry.type} 
+                            fill={[
+                              "#8b5cf6", "#a78bfa", "#c4b5fd", 
+                              "#ddd6fe", "#f3e8ff", "#e879f9"
+                            ][idx % 6]} 
+                          />
                         ))}
                       </Pie>
-                      <RechartsTooltip />
+                      <RechartsTooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1f2937', 
+                          border: '1px solid #374151',
+                          borderRadius: '8px',
+                          color: '#fff'
+                        }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               )}
             </div>
-            {/* Alt Kazanımlar Ters Bar Chart */}
+            {/* Alt Kazanımlar Horizontal Bar Chart */}
             <div className="mb-8">
               <div className="font-semibold text-lg mb-1">Alt Kazanımlar</div>
-              <div className="text-gray-400 text-sm mb-2">Yanlış ve Boş Soruların Alt Kazanımlara Göre Dağılımları</div>
+              <div className="text-gray-400 text-sm mb-2">
+                Yanlış ve Boş Soruların Alt Kazanımlara Göre Dağılımları
+                {selectedSubSubject && (
+                  <span className="ml-2 text-[#8b5cf6]">({selectedSubSubject})</span>
+                )}
+              </div>
               {loading ? (
-                <div className="w-full h-56 flex items-center justify-center"><Loader2 className="animate-spin text-gray-400" /></div>
+                <div className="w-full h-56 flex items-center justify-center">
+                  <Loader2 className="animate-spin text-gray-400" />
+                </div>
               ) : subAchievementDist.length === 0 ? (
-                <div className="w-full h-56 flex items-center justify-center text-gray-400">Veri bulunamadı</div>
+                <div className="w-full h-56 flex items-center justify-center text-gray-400">
+                  Veri bulunamadı
+                </div>
               ) : (
-                <div className="w-full h-56">
+                <div className="w-full h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={subAchievementDist} layout="vertical">
-                      <XAxis type="number" allowDecimals={false} hide />
-                      <YAxis dataKey="name" type="category" width={180} />
-                      <RechartsTooltip />
-                      <Bar dataKey="value" fill="#a78bfa" radius={[0, 8, 8, 0]} />
+                    <BarChart 
+                      data={subAchievementDist} 
+                      layout="vertical" 
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <XAxis type="number" allowDecimals={false} />
+                      <YAxis 
+                        dataKey="achievement" 
+                        type="category" 
+                        width={200}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <RechartsTooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1f2937', 
+                          border: '1px solid #374151',
+                          borderRadius: '8px',
+                          color: '#fff'
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#a78bfa" radius={[0, 4, 4, 0]}>
+                        <LabelList dataKey="count" position="right" fontSize={12} fill="#fff" />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -364,8 +440,6 @@ export default function AnalysisClient() {
             </div>
           </CardContent>
         </Card>
-        <Button variant="outline" onClick={() => window.history.back()} className="border-gray-700">Geri Dön</Button>
-      </main>
     </div>
   );
 } 
