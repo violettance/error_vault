@@ -18,6 +18,19 @@ export interface QuestionAnalysis {
   solution_steps_count: number;
 }
 
+export interface ChartData {
+  difficulty: Array<{level: string, count: number}>;
+  errorType: Array<{type: string, count: number}>;
+  subject: Array<{subject: string, count: number}>;
+  status: Array<{status: string, count: number}>;
+  selectivity: Array<{level: string, count: number}>;
+  learningLevel: Array<{level: string, count: number}>;
+  questionType: Array<{type: string, count: number}>;
+  questionFormat: Array<{format: string, count: number}>;
+  solutionStrategy: Array<{strategy: string, count: number}>;
+  subAchievement: Array<{achievement: string, count: number}>;
+}
+
 // API route'u çağırarak resim analizi
 export async function analyzeQuestionImage(file: File): Promise<QuestionAnalysis> {
   const formData = new FormData();
@@ -70,4 +83,36 @@ export async function batchAnalyzeImages(
     onProgress(files.length, files.length);
   }
   return result.analyses || [];
+}
+
+// AI Performance Report Generation
+export async function generatePerformanceReport(
+  examName: string,
+  chartData: ChartData,
+  totalQuestions: number
+): Promise<string> {
+  const response = await fetch('/api/generate-report', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      examName,
+      chartData,
+      totalQuestions
+    }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Rapor oluşturma başarısız');
+  }
+  
+  const result = await response.json();
+  
+  if (!result.success) {
+    throw new Error(result.error || 'Rapor oluşturma başarısız');
+  }
+  
+  return result.report;
 } 
